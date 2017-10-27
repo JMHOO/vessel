@@ -20,6 +20,7 @@ A package for preparing DICOM data. It provides a `QueueGenerator` which leverag
         generator_example.py    An example of use this package
         parser_unittest.py      unit test for parser
         reader_unittest.py      unit test for parallel generator
+    - logs                      some test logs
     vessel.ipynb                Jupyter notebook: some experiments results
     setup.py
     
@@ -34,7 +35,7 @@ A package for preparing DICOM data. It provides a `QueueGenerator` which leverag
     pip3 install -e vessel
 ```  
 
-### example
+### example of GeneratorQueue (parallelized loading)
 ```python
     # set basic rule to mimic training
     batch_size = 12
@@ -44,7 +45,7 @@ A package for preparing DICOM data. It provides a `QueueGenerator` which leverag
     n_of_samples = len(feeder)
     steps_of_epoch = n_of_samples / batch_size
 
-    # generator to generate (pixel_data, mask)
+    # generator to generate ([pixel_data], [mask])
     generator = DICOMFileIterator(x=feeder.files(), batch_size=batch_size)
     try:
         # use GeneratorQueue to parallel generator
@@ -69,6 +70,36 @@ A package for preparing DICOM data. It provides a `QueueGenerator` which leverag
     finally:
         queue.stop()
 ```
+
+### example of SINGLE BATCH iterator (not parallel)
+```python
+    batch_size = 8
+    # create file feeder, 'data' is the directory contains DICOMs and contours
+    feeder = FileFeeder('data')
+    # generator to generate ([pixel_data], [mask])
+    generator = DICOMFileIterator(x=feeder.files(), batch_size=batch_size)
+
+    print("Total sample: {}, batches: {}".format(len(feeder), len(generator)))
+    # test for generate 10 batch
+    n = 10
+    while(n>0):
+        batch_x, batch_y = next(generator)
+        print(batch_x.shape, batch_y.shape)
+        n -= 1
+```
+### example of SINGLE iterator (not parallel)
+```python
+    # create file feeder, 'data' is the directory contains DICOMs and contours
+    feeder = FileFeeder('data')
+    # FileFeeder also can be an iterator, return tuple(image, mask)
+    for image, mask in feeder:
+        if mask is None:
+            y = 'None'
+        else:
+            y = mask.shape
+        print(image.shape, y)
+```
+
 ## Q & A
 1. How did you verify that you are parsing the contours correctly?
 
