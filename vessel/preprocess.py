@@ -114,6 +114,8 @@ class FileFeeder(object):
         self._patient_contours = {}         # a map describe dicoms(patient id) and contourfiles
         self._patient_files = {}            # a map decribe patient id ant PatientFile object
         self._file_array = None
+        self.n = 0
+        self._iter_index = 0
         if os.path.exists(self._directory):
             self.scan_files()
         else:
@@ -155,9 +157,10 @@ class FileFeeder(object):
                         os.path.join(dicoms_path, sub_dir), 
                         os.path.join(base_contour_path, self._patient_contours[sub_dir]))
                     patient_files.append(self._patient_files[sub_dir].paired_files())
-        self._file_array = np.concatenate(patient_files)
-        self.n = self._file_array.shape[0]
-        self._iter_index = 0
+        if patient_files:
+            self._file_array = np.concatenate(patient_files)
+            self.n = self._file_array.shape[0]
+            self._iter_index = 0
 
     def __len__(self):
         return self.n
@@ -199,7 +202,10 @@ class DICOMFileIterator(Iterator):
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.seed = seed
-        super().__init__(x.shape[0], batch_size, shuffle, seed)
+        sample_size = 0
+        if x is not None:
+            sample_size = x.shape[0]
+        super().__init__(sample_size, batch_size, shuffle, seed)
 
     def _process_batch_data(self, index_array):
         """
@@ -231,7 +237,7 @@ class DICOMFileIterator(Iterator):
         with self.index_locker:
             index_array = next(self.index_generator)
 
-        # print(index_array)
+        # print("batch index array: {}".format(index_array))
         # process_batch_data can be parallel
         return self._process_batch_data(index_array)
 
