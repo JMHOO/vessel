@@ -19,7 +19,7 @@ class Iterator(object):
         :n, total size.
         :batch_size.
         :shuffle
-        :seed, Random seed for shuffle
+        :seed, Random seed for reproducility
     """
     def __init__(self, n, batch_size, shuffle, seed):
         self.n = n
@@ -32,11 +32,13 @@ class Iterator(object):
         self.index_array = None
         self.index_generator = self._generate_index()
 
+    # re-shuffle the inner index array, usually do it for each epoch
     def _reset_index_array(self):
         self.index_array = np.arange(self.n)
         if self.shuffle:
             self.index_array = np.random.permutation(self.n)
 
+    # fetch one batch
     def __getitem__(self, idx):
         if idx >= len(self):
             print('exceed maximun batches')
@@ -60,7 +62,7 @@ class Iterator(object):
     def reset(self):
         self.batch_index = 0
 
-    # generate an index array for current batch
+    # get an index array for current batch
     def _generate_index(self):
         self.reset()
         while True:
@@ -79,12 +81,14 @@ class Iterator(object):
             yield self.index_array[current_index:
                                    current_index + self.batch_size]
 
+    # currently not used, we only use "next" now
     #def __iter__(self):
     #    return self
 
     def __next__(self, *args, **kwargs):
         return self.next(*args, **kwargs)
 
+    # sub-class should implement this
     def next(self, args, kwargs):
         pass
 
@@ -100,7 +104,19 @@ class Iterator(object):
 
 
 class GeneratorQueue(object):
+    """Parallel a generator 
+       using multiprocessing to fetch data from a generator and cache into a queue
+       GeneratorQueue can return another generator that retrieve data from queue
+    """
     def __init__(self, generator, seed=None):
+        """
+        generator: a generator
+           example output of this generator
+           - tuple(image array, mask array)
+           The generator is expected to loop over its data indefinitely.
+
+        seed: a random seed for reproducibility
+        """
         self._wait_time = 0.05
         self._generator = generator
         self._processes = []
@@ -111,9 +127,14 @@ class GeneratorQueue(object):
         self.queue = None
 
     def start(self):
+        """
+        Start to loading data from generator
+        Since we used multiprocessing.Queue, queue.put will block the workers when reached the max size of queue
+        """
         self._stop_event = mp.Event()
         self.queue = mp.Queue(self._cache_size)
 
+        # function for sub-processes
         def data_generator_runner(p_id):
             while not self._stop_event.is_set():
                 try:
@@ -125,6 +146,7 @@ class GeneratorQueue(object):
                 except Exception:
                     self._stop_event.set()
 
+        # create workers
         try:
             for i in range(self._max_workers):
                 np.random.seed(self._seed)
@@ -138,7 +160,7 @@ class GeneratorQueue(object):
             self.stop()
             raise
 
-    def stop(self, timeout=None):
+    def stop(self):
         if self.is_running():
             self._stop_event.set()
 
@@ -167,7 +189,7 @@ class GeneratorQueue(object):
                     yield item
             else:
                 # The consumer may faster than producer
-                # wait workers to load data
+                # waiting workers to load data
                 all_finished = all([not p.is_alive() for p in self._processes])
                 if all_finished and self.queue.empty():
                     raise StopIteration()

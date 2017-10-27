@@ -6,6 +6,6 @@ IOConfig = {
     'outter_contour_folder': 'o-contours'
 }
 Performance = {
-    'max_workers': 4,
-    'cache_size': 20
+    'max_workers': 4,       # how many workers
+    'cache_size': 20        # how many batches hold inside the queue
 }

@@ -1,4 +1,5 @@
 import re
+import os
 import numpy as np
 
 import vessel.configuration as config
@@ -16,7 +17,6 @@ class PatientFile(object):
         self._paired_files = []
         self._files = {}
         self._paths = {}
-        self._contour_index = {}
         path_to_be_scanned = [
             dicoms_folder,
             os.path.join(contour_folder, config.IOConfig['inner_contour_folder']),
@@ -32,38 +32,56 @@ class PatientFile(object):
                     files.append(filename)
             self._files[self.FILE_SETS_LABELS[i]] = files
 
-        # build file pairs, using DICOM file name as key to connect i/o-contour-files
-        # [DICOM file, i-contour-file, o-contour-file]
-        self._pair_files()
+        self._build_file_array()
 
-    def _pair_files(self):
+    def _build_file_array(self):
+        """
+        build file array
+           if i/o-contour-file doesn't exist, it will be marked as None
+        result:
+            [
+                [DICOM file, i-contour-file, o-contour-file],
+                [DICOM file, i-contour-file, o-contour-file],
+                ...
+                [DICOM file, i-contour-file, o-contour-file]
+            ]
+        """
+
+        # use regexp to search index id from i/o-contour-files' name
+        # e.g. 
+        #   IM-0001-0027-icontour-manual.txt
+        #   0027 is the index id we are looking for
+        contour_index = {}
         pattern = r'(\d+)-[io]contour'
         for con_file in self._files['i_contours']:
             match = re.search(pattern, con_file)
             if match:
                 index = int(match.group(1))
-                self._contour_index[index] = (con_file, None)
+                contour_index[index] = (con_file, None)
         
         for con_file in self._files['o_contours']:
             match = re.search(pattern, con_file)
             if match:
                 index = int(match.group(1))
                 i_con = None
-                if index in self._contour_index:
-                    i_con, _ = self._contour_index[index]
-                self._contour_index[index] = (i_con, con_file)
+                if index in contour_index:
+                    i_con, _ = contour_index[index]
+                contour_index[index] = (i_con, con_file)
         
+        # connect dicom, i-contour and o-contour together
+        # if the dicom file name isn't a number, this file will be ignored
         for dicom_file in self._files['dicoms']:
             i_con, o_con = None, None
             filename, file_ext = os.path.splitext(dicom_file)
             if filename.isdigit():
                 index = int(filename)
-                if index in self._contour_index:
-                    i_con, o_con = self._contour_index[index]
+                if index in contour_index:
+                    i_con, o_con = contour_index[index]
                     if i_con:
                         i_con = os.path.join(self._paths['i_contours'], i_con)
                     if o_con:
                         o_con = os.path.join(self._paths['o_contours'], o_con)
+
             self._paired_files.append(
                 [os.path.join(self._paths['dicoms'], dicom_file), i_con, o_con]
             )
@@ -83,10 +101,17 @@ class PatientFile(object):
 
 class FileFeeder(object):
     """Scan DICOM and contour files
+    directory: a folder that contains dcm and contour files
+    The folder structure is expect as:
+       directory
+          |---- dicoms          # folder name can defind in configuration.py
+          |____ contourfiles    # folder name can defind in configuration.py
+            |---- i-contours    # folder name can defind in configuration.py
+            |____ o-contours    # folder name can defind in configuration.py
     """
     def __init__(self, directory):
         self._directory = os.path.abspath(directory)
-        self._patient_contours = {}         # a map file describe dicoms and contourfiles
+        self._patient_contours = {}         # a map describe dicoms(patient id) and contourfiles
         self._patient_files = {}            # a map decribe patient id ant PatientFile object
         self._file_array = None
         if os.path.exists(self._directory):
@@ -107,6 +132,18 @@ class FileFeeder(object):
                     self._patient_contours[links[0]] = links[1]
     
     def scan_files(self):
+        """Scan directory
+           1. use link.csv build link between  [patient] <---> [contourfiles]
+           2. for each [patient]
+              build link between  [*.dcm] <---> ([i-contour], [o-contour])
+           3. concat all patient's file together
+           e.g. scaned file array
+            [
+                [140.dcm, ...-0140-icontour-manual.txt, ...-0140-ocontour-manual.txt ],
+                ...
+                [220.dcm, None, None ]
+            ]
+        """
         self._build_patient_contours()
         dicoms_path = os.path.join(self._directory, config.IOConfig['dicoms_folder'])
         base_contour_path = os.path.join(self._directory, config.IOConfig['contour_folder'])
@@ -130,6 +167,7 @@ class FileFeeder(object):
         return self
 
     # this is a SIMPLE iterator, no parallel !
+    # return: ([pixel_data], [mask]) if that dcm don't have corresponding contourfile, [maks] will be None
     def __next__(self):
         if self._iter_index >= self.n:
             raise StopIteration
@@ -143,6 +181,11 @@ class FileFeeder(object):
 
 
 class DICOMFileIterator(Iterator):
+    """An implementation of utils.Iterator
+       Iterate data through batches
+       This iterator is designed for parallel, a locker will be apply when retrieving the INDICES of next batch.
+          But the locker will not affect the _process_batch_data
+    """
     def __init__(self, x, batch_size, shuffle=True, seed=None):
         """
         x is a numpy array of file group. e.g.
