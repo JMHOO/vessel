@@ -37,6 +37,8 @@ A package for preparing DICOM data. It provides a `QueueGenerator` which leverag
 
 ### example of GeneratorQueue (parallelized loading)
 ```python
+    from vessel.preprocess import FileFeeder, DICOMFileIterator
+    from vessel.utils import GeneratorQueue
     # set basic rule to mimic training
     batch_size = 12
     epochs = 2
@@ -73,6 +75,7 @@ A package for preparing DICOM data. It provides a `QueueGenerator` which leverag
 
 ### example of SINGLE BATCH iterator (not parallel)
 ```python
+    from vessel.preprocess import FileFeeder, DICOMFileIterator
     batch_size = 8
     # create file feeder, 'data' is the directory contains DICOMs and contours
     feeder = FileFeeder('data')
@@ -89,6 +92,7 @@ A package for preparing DICOM data. It provides a `QueueGenerator` which leverag
 ```
 ### example of SINGLE iterator (not parallel)
 ```python
+    from vessel.preprocess import FileFeeder
     # create file feeder, 'data' is the directory contains DICOMs and contours
     feeder = FileFeeder('data')
     # FileFeeder also can be an iterator, return tuple(image, mask)
